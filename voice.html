@@ -1,0 +1,392 @@
+
+
+`voice-anonymization`
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Voice Anonymization</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    max-width: 700px;
+    margin: 1rem auto;
+    padding: 1rem;
+    background: #f4f7ff;
+    color: #333;
+  }
+  h1 {
+    text-align: center;
+    color: #3a3a99;
+    margin-bottom: 0.5rem;
+  }
+  p.description {
+    text-align: center;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  button, .link-button {
+    background-color: #4255f5;
+    color: white;
+    border: none;
+    padding: 0.5rem 1.25rem;
+    font-size: 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    user-select: none;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+  }
+  button:disabled {
+    background-color: #a3aaf9;
+    cursor: not-allowed;
+  }
+  button:hover:not(:disabled), .link-button:hover:not(:disabled) {
+    background-color: #3648c9;
+  }
+  input[type="file"] {
+    display: none;
+  }
+  label.file-label {
+    background-color: #4caf50;
+    padding: 0.5rem 1.25rem;
+    border-radius: 5px;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+    font-size: 1rem;
+    display: inline-block;
+    transition: background-color 0.3s ease;
+  }
+  label.file-label:hover {
+    background-color: #3b8e40;
+  }
+  #status {
+    text-align: center;
+    font-style: italic;
+    margin-bottom: 1rem;
+    min-height: 1.25rem;
+  }
+  audio {
+    display: block;
+    margin: 0 auto 1.5rem auto;
+    width: 100%;
+    max-width: 500px;
+  }
+  footer {
+    text-align: center;
+    margin-top: 3rem;
+    font-size: 0.9rem;
+    color: #777;
+  }
+  /* Hide pages by default */
+  .page {
+    display: none;
+  }
+  /* Show active page */
+  .page.active {
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<!-- Home page section -->
+<section id="home-page" class="page active">
+  <h1>Welcome to Voice Anonymization</h1>
+  <p class="description">
+    Easily anonymize your voice by changing pitch and tone.<br />
+    Record your voice or upload an audio file, then listen to or download your anonymized audio.
+  </p>
+  <div class="controls" style="justify-content:center;">
+    <button id="go-to-anonymize-btn" class="link-button" title="Go to anonymization page">
+      Go to Voice Anonymization
+    </button>
+  </div>
+</section>
+
+<!-- Anonymization page section -->
+<section id="anonymize-page" class="page">
+  <h1>Voice Anonymization</h1>
+  <p class="description">
+    Record your voice or upload an audio file, then anonymize the voice by changing pitch and tone. Listen and download your anonymized audio.
+  </p>
+
+  <div class="controls">
+    <button id="start-record-btn">Start Recording</button>
+    <button id="stop-record-btn" disabled>Stop Recording</button>
+    <label for="upload-audio" class="file-label" title="Upload audio file (wav, mp3, ogg)">
+      Upload Audio
+    </label>
+    <input type="file" id="upload-audio" accept="audio/*" />
+    <button id="process-btn" disabled>Apply Anonymization</button>
+    <button id="download-btn" disabled>Download Anonymized Audio</button>
+  </div>
+
+  <div id="status"></div>
+
+  <audio id="audio-player" controls></audio>
+
+  <div class="controls" style="justify-content:center; margin-top:1rem;">
+    <button id="back-home-btn" class="link-button" title="Back to Home Page">
+      ← Back to Home
+    </button>
+  </div>
+</section>
+
+<script>
+(() => {
+  // Page elements
+  const homePage = document.getElementById('home-page');
+  const anonymizePage = document.getElementById('anonymize-page');
+
+  // Navigation buttons
+  const goToAnonymizeBtn = document.getElementById('go-to-anonymize-btn');
+  const backHomeBtn = document.getElementById('back-home-btn');
+
+  // Voice anonymization controls
+  const startRecordBtn = document.getElementById('start-record-btn');
+  const stopRecordBtn = document.getElementById('stop-record-btn');
+  const uploadInput = document.getElementById('upload-audio');
+  const processBtn = document.getElementById('process-btn');
+  const downloadBtn = document.getElementById('download-btn');
+  const statusEl = document.getElementById('status');
+  const audioPlayer = document.getElementById('audio-player');
+
+  let mediaRecorder;
+  let recordedChunks = [];
+  let audioContext;
+  let sourceBuffer;
+  let anonymizedBuffer;
+
+  // Page navigation functions
+  function showPage(page) {
+    if (page === 'home') {
+      homePage.classList.add('active');
+      anonymizePage.classList.remove('active');
+    } else if (page === 'anonymize') {
+      anonymizePage.classList.add('active');
+      homePage.classList.remove('active');
+    }
+    // Clear statuses and playback on page switch
+    setStatus('');
+    resetAll();
+  }
+
+  goToAnonymizeBtn.onclick = () => showPage('anonymize');
+  backHomeBtn.onclick = () => showPage('home');
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+
+  function resetAll() {
+    recordedChunks = [];
+    anonymizedBuffer = null;
+    processBtn.disabled = true;
+    downloadBtn.disabled = true;
+    audioPlayer.src = '';
+    startRecordBtn.disabled = false;
+    stopRecordBtn.disabled = true;
+    uploadInput.disabled = false;
+    uploadInput.value = '';
+  }
+
+  // Start recording from microphone
+  startRecordBtn.onclick = async () => {
+    resetAll();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      mediaRecorder = new MediaRecorder(stream);
+      recordedChunks = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+        setStatus('Recording complete. Loading audio...');
+        const arrayBuffer = await blob.arrayBuffer();
+        const decoded = await audioContext.decodeAudioData(arrayBuffer);
+        sourceBuffer = decoded;
+        setStatus('Audio ready. You can apply anonymization.');
+        processBtn.disabled = false;
+      };
+
+      mediaRecorder.start();
+      setStatus('Recording... Click "Stop Recording" to finish.');
+      startRecordBtn.disabled = true;
+      stopRecordBtn.disabled = false;
+      uploadInput.disabled = true;
+      processBtn.disabled = true;
+      downloadBtn.disabled = true;
+      audioPlayer.src = '';
+    } catch (err) {
+      setStatus('Microphone access denied or error: ' + err.message);
+    }
+  };
+
+  // Stop recording
+  stopRecordBtn.onclick = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      startRecordBtn.disabled = false;
+      stopRecordBtn.disabled = true;
+      uploadInput.disabled = false;
+    }
+  };
+
+  // Handle file upload
+  uploadInput.onchange = async (event) => {
+    resetAll();
+    if (uploadInput.files.length === 0) {
+      setStatus('No file selected.');
+      return;
+    }
+    const file = uploadInput.files[0];
+    setStatus('Loading file...');
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const arrayBuffer = await file.arrayBuffer();
+      const decoded = await audioContext.decodeAudioData(arrayBuffer);
+      sourceBuffer = decoded;
+      setStatus('Audio file loaded. You can apply anonymization.');
+      processBtn.disabled = false;
+      startRecordBtn.disabled = false;
+      stopRecordBtn.disabled = true;
+    } catch (err) {
+      setStatus('Error decoding audio file: ' + err.message);
+    }
+  };
+
+  // Anonymization effect using pitch shift (playbackRate 1.3) and highpass filter
+  function anonymizeAudio(audioBuffer) {
+    const length = audioBuffer.length;
+    const sampleRate = audioBuffer.sampleRate;
+    const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, length, sampleRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.playbackRate.value = 1.3;
+
+    const biquadFilter = offlineCtx.createBiquadFilter();
+    biquadFilter.type = 'highpass';
+    biquadFilter.frequency.value = 1000;
+
+    source.connect(biquadFilter);
+    biquadFilter.connect(offlineCtx.destination);
+    source.start(0);
+
+    return offlineCtx.startRendering();
+  }
+
+  // Process the loaded or recorded audio
+  processBtn.onclick = async () => {
+    if (!sourceBuffer) {
+      setStatus('No audio source available.');
+      return;
+    }
+    setStatus('Applying anonymization effect...');
+    processBtn.disabled = true;
+    downloadBtn.disabled = true;
+    try {
+      anonymizedBuffer = await anonymizeAudio(sourceBuffer);
+      const wavBlob = bufferToWavBlob(anonymizedBuffer);
+      const url = URL.createObjectURL(wavBlob);
+      audioPlayer.src = url;
+      audioPlayer.play();
+      setStatus('Anonymization complete. Listen below or download.');
+      downloadBtn.disabled = false;
+    } catch (err) {
+      setStatus('Error processing audio: ' + err.message);
+      processBtn.disabled = false;
+    }
+  };
+
+  // Convert AudioBuffer to WAV Blob for download
+  function bufferToWavBlob(buffer) {
+    const numOfChan = buffer.numberOfChannels,
+      length = buffer.length * numOfChan * 2 + 44,
+      bufferArray = new ArrayBuffer(length),
+      view = new DataView(bufferArray),
+      channels = [],
+      sampleRate = buffer.sampleRate;
+    let offset = 0,
+      pos = 0;
+
+    function setUint16(data) {
+      view.setUint16(pos, data, true);
+      pos += 2;
+    }
+    function setUint32(data) {
+      view.setUint32(pos, data, true);
+      pos += 4;
+    }
+
+    setUint32(0x46464952);
+    setUint32(length - 8);
+    setUint32(0x45564157);
+
+    setUint32(0x20746d66);
+    setUint32(16);
+    setUint16(1);
+    setUint16(numOfChan);
+    setUint32(sampleRate);
+    setUint32(sampleRate * numOfChan * 2);
+    setUint16(numOfChan * 2);
+    setUint16(16);
+
+    setUint32(0x61746164);
+    setUint32(length - pos - 4);
+
+    for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
+    for (let i = 0; i < buffer.length; i++) {
+      for (let channel = 0; channel < numOfChan; channel++) {
+        let sample = Math.max(-1, Math.min(1, channels[channel][i]));
+        sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        view.setInt16(pos, sample, true);
+        pos += 2;
+      }
+    }
+    return new Blob([bufferArray], { type: 'audio/wav' });
+  }
+
+  // Download the anonymized audio
+  downloadBtn.onclick = () => {
+    if (!anonymizedBuffer) return;
+    const wavBlob = bufferToWavBlob(anonymizedBuffer);
+    const url = URL.createObjectURL(wavBlob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = 'anonymized-voice.wav';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  };
+
+  // Initialize - show home page on load
+  showPage('home');
+})();
+</script>
+
+<footer>
+  &copy; 2024 Voice Anonymization - Browser-based demo
+</footer>
+</body>
+</html>
+
+```
+
